@@ -1,0 +1,313 @@
+\documentclass[12pt, a4paper]{article}
+
+% ----- بسته‌های مورد نیاز -----
+\usepackage{amsmath, amssymb} % برای فرمول‌های ریاضی
+\usepackage{graphicx} % برای قرار دادن عکس
+\usepackage{float} % برای تنظیم دقیق جایگاه عکس و جدول
+\usepackage{xcolor} % برای رنگ‌بندی
+\usepackage{listings} % برای قرار دادن کدهای برنامه‌نویسی
+\usepackage[margin=2.5cm]{geometry} % تنظیم حاشیه‌های صفحه
+
+% ----- تنظیمات مربوط به کدهای پایتون -----
+\lstset{ language=Python, basicstyle=\ttfamily\small\setltr, % چپ‌چین کردن و تغییر فونت کد
+	keywordstyle=\color{blue}, stringstyle=\color{red}, commentstyle=\color{green!60!black}, numbers=left, numberstyle=\tiny\color{gray}, stepnumber=1, numbersep=8pt, backgroundcolor=\color{gray!10}, showstringspaces=false, breaklines=true, frame=single, rulecolor=\color{black!30}, }
+
+\usepackage{xepersian}
+\settextfont{Vazirmatn FD}
+
+\begin{document}
+	\begin{titlepage}
+		\begin{center}
+			\vspace*{-2cm}
+			\includegraphics[width=3cm]{logo.png}
+			\\
+			\vspace{0.5cm}
+			\large \textbf{دانشگاه تربیت مدرس} \\ \normalsize دانشکده مهندسی برق و
+			کامپیوتر \\
+			
+			\vspace{2.5cm}
+			
+			\rule{\linewidth}{0.5mm} \\[0.4cm]
+			{\huge \bfseries گزارش تمرین دوم درس یادگیری عمیق} \\[0.4cm]
+			\rule{\linewidth}{0.5mm} \\
+			
+			\vspace{2.5cm}
+			
+			\begin{minipage}{0.6\textwidth}
+				\begin{center}
+					\large \textbf{نگارنده:} \\ محمدرضا قادری عمودیزج \\ شماره دانشجویی: 40261051004
+					\\
+					\vspace{0.5cm}
+					\textbf{مقطع:} \\ کارشناسی ارشد مهندسی کامپیوتر
+				\end{center}
+			\end{minipage}
+		\end{center}
+	\end{titlepage}
+	
+	\newpage
+	
+	\section{مقدمه}
+	در این گزارش، نتایج مربوط به تمرین دوم درس یادگیری عمیق شامل بررسی تاثیر حذف لایه
+	Pooling و جایگزینی آن با تنظیمات Stride در شبکه‌های عصبی پیچشی (CNN) بررسی شده
+	است.
+	
+	\section{بخش اول: بررسی داده‌های EMNIST}
+	همان‌طور که در صورت سوال خواسته شده بود، برای بررسی تاثیر تنظیمات مختلف، ابتدا
+	یک مدل پایه شامل لایه \lr{Max Pooling} طراحی گردید. سپس با حذف این لایه و تغییر
+	گام حرکت (\lr{Stride}) و پدینگ (\lr{Padding}) در لایه‌های کانولوشن، عملکرد مدل
+	ارزیابی شد.
+	
+	\subsection{کد پیاده‌سازی مدل}
+	در قطعه کد زیر، فرآیند کامل شامل بارگذاری داده‌ها، تابع ساخت مدل‌های مختلف و حلقه
+	اجرای تست‌ها آورده شده است:
+	
+	\begin{latin}
+		\begin{lstlisting}
+import tensorflow as tf
+from tensorflow.keras import layers, models
+import tensorflow_datasets as tfds
+import time
+
+def load_emnist():
+print("Loading EMNIST dataset...")
+(ds_train, ds_test), ds_info = tfds.load(
+'emnist/balanced',
+split=['train', 'test'],
+shuffle_files=True,
+as_supervised=True,
+with_info=True,
+)
+
+def normalize_img(image, label):
+image = tf.cast(image, tf.float32) / 255.0
+image = tf.transpose(image, [1, 0, 2])
+return image, label
+
+batch_size = 128
+ds_train = ds_train.map(normalize_img).cache().shuffle(10000).batch(batch_size).prefetch(tf.data.AUTOTUNE)
+ds_test = ds_test.map(normalize_img).batch(batch_size).cache().prefetch(tf.data.AUTOTUNE)
+
+return ds_train, ds_test
+
+def build_model(use_pooling=True, conv_stride=(1, 1), padding_type='valid'):
+model = models.Sequential()
+
+model.add(layers.InputLayer(shape=(28, 28, 1)))
+model.add(layers.Conv2D(32, (3, 3), activation='relu', padding=padding_type))
+
+if use_pooling:
+model.add(layers.MaxPooling2D((2, 2)))
+else:
+model.add(layers.Conv2D(32, (3, 3), strides=conv_stride, activation='relu', padding=padding_type))
+
+model.add(layers.Conv2D(64, (3, 3), activation='relu', padding=padding_type))
+
+if use_pooling:
+model.add(layers.MaxPooling2D((2, 2)))
+else:
+model.add(layers.Conv2D(64, (3, 3), strides=conv_stride, activation='relu', padding=padding_type))
+
+model.add(layers.Flatten())
+model.add(layers.Dense(128, activation='relu'))
+model.add(layers.Dropout(0.3))
+model.add(layers.Dense(47, activation='softmax'))
+
+model.compile(optimizer='adam',
+loss='sparse_categorical_crossentropy',
+metrics=['accuracy'])
+return model
+		\end{lstlisting}
+	\end{latin}
+	
+	\subsection{تحلیل نتایج و مقایسه مدل‌ها}
+	پس از آموزش مدل‌ها بر روی داده‌های \lr{EMNIST} در ۵ دوره (Epoch)، نتایج مربوط
+	به دقت (\lr{Accuracy}) روی داده‌های تست و همچنین زمان کل آموزش برای هر مدل در جدول
+	زیر ثبت شده است:
+	
+	\begin{table}[H]
+		\centering
+		\caption{مقایسه دقت و زمان آموزش با تنظیمات مختلف لایه کانولوشن}
+		\vspace{0.2cm}
+		\begin{tabular}{|c|c|c|c|}
+			\hline
+			\textbf{نام مدل} & \textbf{تنظیمات اعمال شده}                                 & \textbf{دقت تست} & \textbf{زمان آموزش (ثانیه)} \\
+			\hline
+			مدل اول (پایه)   & دارای \lr{Max Pooling} و \lr{Stride (1,1)}                 & \lr{0.8711}      & \lr{139.42}                 \\
+			\hline
+			مدل دوم          & بدون \lr{Pooling}، \lr{Stride (1,2)}                       & \lr{0.8760}      & \lr{313.53}                 \\
+			\hline
+			مدل سوم          & بدون \lr{Pooling}، \lr{Stride (2,1)}                       & \lr{0.8746}      & \lr{267.85}                 \\
+			\hline
+			مدل چهارم        & بدون \lr{Pooling}، \lr{Stride (2,2)}                       & \lr{0.8759}      & \lr{156.94}                 \\
+			\hline
+			مدل پنجم         & بدون \lr{Pooling}، \lr{Stride (2,2)} و \lr{Padding='same'} & \lr{0.8814}      & \lr{225.65}                 \\
+			\hline
+		\end{tabular}
+	\end{table}
+	
+	\pagebreak
+	با بررسی داده‌های جدول، می‌توان به نتایج زیر رسید:
+	
+	\begin{itemize}
+		\item \textbf{بررسی دقت (Accuracy):} حذف لایه \lr{Pooling} و استفاده از گام حرکت
+		(\lr{Stride}) باعث افت دقت نشد، بلکه در تمام حالت‌ها دقت به مقدار کمی
+		افزایش یافت. بهترین عملکرد مربوط به مدل پنجم با دقت حدود 88 درصد است. استفاده از پدینگ \lr{same} باعث می‌شود اطلاعات لبه‌های تصویر در فرآیند کانولوشن
+		از بین نرود و شبکه ویژگی‌های بهتری استخراج کند.
+		
+		\item \textbf{بررسی زمان آموزش:} مدل پایه که دارای \lr{Max Pooling} بود، سریع‌ترین
+		زمان اجرا (حدود 139 ثانیه) را داشت. در لایه \lr{Pooling} هیچ وزن قابل یادگیری
+		وجود ندارد، بنابراین محاسبات سریع‌تر انجام می‌شود.
+		
+		\item \textbf{تاثیر Stride نامتقارن:} در مدل‌های دوم و سوم که از استراید
+		نامتقارن (1,2) و (2,1) استفاده شد، زمان آموزش به شدت افزایش یافت (به ترتیب
+		حدود 313 و 267 ثانیه). دلیل این موضوع این است که تصویر تنها در یک بُعد فشرده
+		می‌شود و خروجی لایه‌های کانولوشن بزرگ‌تر باقی می‌ماند. این کار باعث می‌شود
+		تعداد پارامترها در لایه \lr{Dense} نهایی به شدت بالا برود و پردازش سنگین‌تر
+		شود.
+		
+		\item \textbf{جایگزین منطقی Pooling:} مدل چهارم با \lr{Stride (2,2)} از نظر زمان
+		آموزش (حدود 156 ثانیه) نزدیک‌ترین حالت به مدل پایه است؛ زیرا این استراید دقیقاً
+		مانند یک لایه \lr{Pooling} (2x2)، ابعاد تصویر را در هر دو محور نصف کرده و حجم
+		محاسبات را تا حد زیادی کنترل می‌کند.
+	\end{itemize}
+	
+	\pagebreak
+	
+	\section{بخش دوم: بررسی بر روی داده‌های ارقام فارسی}
+	در این بخش، آزمایش‌های انجام شده در بخش اول، بر روی مجموعه داده ارقام دست‌نویس
+	فارسی هدی (\lr{Hoda Dataset}) تکرار شد. برای خواندن فایل‌های باینری اختصاصی این
+	دیتاسِت (\lr{.cdb})، از اسکریپت استاندارد \lr{HodaDatasetReader} استفاده گردید
+	و تصاویر به ابعاد ثابت ۲۸ در ۲۸ پیکسل تغییر اندازه داده شدند.
+	
+	\subsection{کد پیاده‌سازی و بارگذاری داده‌ها}
+	قطعه کد زیر، نحوه بارگذاری فایل‌های \lr{cdb} و پیش‌پردازش آن‌ها را نشان می‌دهد.
+	معماری شبکه عصبی و تنظیمات لایه‌ها دقیقاً مشابه بخش اول است.
+	
+	\begin{latin}
+		\begin{lstlisting}
+from HodaDatasetReader import read_hoda_cdb
+import cv2
+import numpy as np
+import os
+
+def load_hoda_cdb(dataset_path='hoda_dataset/Digits', target_size=(28, 28)):
+train_path = os.path.join(dataset_path, 'Train 60000.cdb')
+test_path = os.path.join(dataset_path, 'Test 20000.cdb')
+
+train_images, train_labels = read_hoda_cdb(train_path)
+test_images, test_labels = read_hoda_cdb(test_path)
+
+def process_images(raw_images):
+processed = [cv2.resize(img, target_size, interpolation=cv2.INTER_AREA) for img in raw_images]
+processed_array = np.array(processed, dtype='float32') / 255.0
+return np.expand_dims(processed_array, -1)
+
+x_train = process_images(train_images)
+x_test = process_images(test_images)
+y_train = np.array(train_labels, dtype='int')
+y_test = np.array(test_labels, dtype='int')
+
+return (x_train, y_train), (x_test, y_test)
+		\end{lstlisting}
+	\end{latin}
+	
+	\pagebreak
+	
+	\subsection{تحلیل نتایج بر روی ارقام فارسی}
+	نتایج آموزش مدل‌ها بر روی ۶۰ هزار داده آموزشی هدی در ۵ دوره (\lr{Epoch}) در
+	جدول زیر آمده است:
+	
+	\begin{table}[H]
+		\centering
+		\caption{مقایسه دقت و زمان آموزش بر روی دیتاسِت هدی}
+		\vspace{0.2cm}
+		\begin{tabular}{|c|c|c|c|}
+			\hline
+			\textbf{نام مدل} & \textbf{تنظیمات اعمال شده}                                 & \textbf{دقت تست} & \textbf{زمان آموزش (ثانیه)} \\
+			\hline
+			مدل اول (پایه)   & دارای \lr{Max Pooling} و \lr{Stride (1,1)}                 & \lr{0.9862}      & \lr{77.09}                  \\
+			\hline
+			مدل دوم          & بدون \lr{Pooling}، \lr{Stride (1,2)}                       & \lr{0.9847}      & \lr{165.72}                 \\
+			\hline
+			مدل سوم          & بدون \lr{Pooling}، \lr{Stride (2,1)}                       & \lr{0.9863}      & \lr{152.91}                 \\
+			\hline
+			مدل چهارم        & بدون \lr{Pooling}، \lr{Stride (2,2)}                       & \lr{0.9833}      & \lr{89.90}                  \\
+			\hline
+			مدل پنجم         & بدون \lr{Pooling}، \lr{Stride (2,2)} و \lr{Padding='same'} & \lr{0.9905}      & \lr{124.85}                 \\
+			\hline
+		\end{tabular}
+	\end{table}
+	
+	با بررسی این نتایج، موارد زیر قابل توجه است:
+	
+	\begin{itemize}
+		\item \textbf{دقت کلی بالا:} دیتاسِت هدی پیچیدگی کمتری دارد؛ به همین دلیل
+		تمام مدل‌ها به دقت بالای 98 درصد رسیده‌اند. بهترین عملکرد باز هم متعلق به مدل
+		پنجم با پدینگ \lr{same} است که به دقت بیش از 99 درصد رسیده است.
+		
+		\item \textbf{سرعت آموزش:} مدل پایه (دارای \lr{Pooling}) با حدود 77 ثانیه، همچنان
+		سریع‌ترین مدل است.
+		
+		\item \textbf{افزایش چشمگیر زمان در استراید نامتقارن:} دقیقاً مشابه رفتار
+		مشاهده شده در بخش اول، استفاده از \lr{Stride (1,2)} و \lr{(2,1)} باعث شد
+		زمان آموزش بیش از دو برابر شود (حدود 150 تا 165 ثانیه). دلیل این امر عدم کاهش
+		ابعاد تصویر در یکی از محورها و در نتیجه، افزایش شدید بار پردازشی در لایه‌های
+		متصل نهایی (\lr{Dense}) است.
+	\end{itemize}
+	
+	\pagebreak
+	
+	\section{بخش سوم: ترکیب ارقام و حروف فارسی}
+	
+	در آخرین بخش از این تمرین، مدل‌ها بر روی یک مجموعه داده بسیار پیچیده‌تر شامل ترکیبی
+	از ارقام و حروف الفبای فارسی آموزش داده شدند. اضافه شدن حروف الفبا، چالش‌های
+	جدیدی برای شبکه به همراه دارد؛ از جمله افزایش تعداد کلاس‌های خروجی (به ۱۹۶ کلاس)
+	و شباهت ساختاری بسیار زیاد بین برخی از حروف (مانند ب، پ، ت، ث). در معماری شبکه،
+	تنها تغییری که اعمال شد، تطبیق لایه \lr{Dense} نهایی با تعداد کلاس‌های جدید (مجموع
+	ارقام و حروف) بود تا مدل قادر به پیش‌بینی احتمالات خروجی به درستی باشد.
+	
+	\subsection{تحلیل نتایج داده‌های ترکیبی}
+	
+	نتایج حاصل از اجرای مدل‌ها با تنظیمات مختلف در جدول زیر ثبت شده است:
+	
+	\begin{table}[H]
+		\centering
+		\caption{مقایسه دقت و زمان آموزش بر روی ترکیب ارقام و حروف فارسی}
+		\vspace{0.2cm}
+		\begin{tabular}{|c|c|c|c|}
+			\hline
+			\textbf{نام مدل} & \textbf{تنظیمات اعمال شده}                                 & \textbf{دقت تست} & \textbf{زمان آموزش (ثانیه)} \\
+			\hline
+			مدل اول (پایه)   & دارای \lr{Max Pooling} و \lr{Stride (1,1)}                 & \lr{0.7761}      & \lr{111.67}                 \\
+			\hline
+			مدل دوم          & بدون \lr{Pooling}، \lr{Stride (1,2)}                       & \lr{0.7812}      & \lr{245.41}                 \\
+			\hline
+			مدل سوم          & بدون \lr{Pooling}، \lr{Stride (2,1)}                       & \lr{0.7844}      & \lr{229.01}                 \\
+			\hline
+			مدل چهارم        & بدون \lr{Pooling}، \lr{Stride (2,2)}                       & \lr{0.7832}      & \lr{134.22}                 \\
+			\hline
+			مدل پنجم         & بدون \lr{Pooling}، \lr{Stride (2,2)} و \lr{Padding='same'} & \lr{0.7905}      & \lr{189.38}                 \\
+			\hline
+		\end{tabular}
+	\end{table}
+	
+	\textbf{نتیجه‌گیری کلی و تحلیل نهایی:}
+	\begin{itemize}
+		\item \textbf{افت دقت نسبت به ارقام:} با افزایش تعداد کلاس‌ها به ۱۹۶ و شباهت
+		ظاهری حروف دست‌نویس فارسی، دقت مدل از حدود ۹۹ درصد (در بخش قبل) به حدود ۷۹
+		درصد کاهش یافت. این مسئله نشان‌دهنده نیاز به شبکه‌های عمیق‌تر یا پیش‌پردازش
+		قوی‌تر برای تشخیص حروف است.
+		
+		\item \textbf{الگوی ثابت \lr{Stride} و \lr{Pooling}:} بررسی نتایج در هر سه
+		بخش (داده‌های انگلیسی، ارقام فارسی و حروف فارسی) الگوی ثابتی را نشان
+		می‌دهد. جایگزینی لایه \lr{Pooling} با لایه کانولوشن با \lr{Stride (2,2)} به
+		همراه پدینگ \lr{same} (مدل پنجم)، بهترین استراتژی برای حفظ و حتی ارتقای جزئیِ
+		دقت مدل است (رسیدن به دقت 79.05 درصد).
+		
+		\item \textbf{افزایش شدید زمان محاسبات:} استفاده از \lr{Stride}های نامتقارن
+		(مدل‌های دوم و سوم) به دلیل عدم کاهش متناسبِ ابعاد در خروجی لایه‌های
+		کانولوشن، باعث تحمیل بار محاسباتی شدید به لایه‌های تمام‌متصل (\lr{Dense}) شده
+		و زمان آموزش را به بیش از دو برابر زمان مدل پایه (حدود ۲۴۵ ثانیه) افزایش داده
+		است.
+	\end{itemize}
+\end{document}

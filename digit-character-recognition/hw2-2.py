@@ -7,9 +7,9 @@ import os
 import urllib.request
 import ssl
 
-
 from HodaDatasetReader import read_hoda_cdb
 
+# Load and process Hoda Digits dataset
 def load_hoda_cdb(dataset_path='hoda_dataset/Digits', target_size=(28, 28)):
     print("\nLoading Hoda Dataset from .cdb files...")
     
@@ -26,6 +26,7 @@ def load_hoda_cdb(dataset_path='hoda_dataset/Digits', target_size=(28, 28)):
     print("Reading Test 20000.cdb ...")
     test_images, test_labels = read_hoda_cdb(test_path)
     
+    # Resize images to 28x28 and normalize
     def process_images(raw_images):
         processed = []
         for img in raw_images:
@@ -46,6 +47,7 @@ def load_hoda_cdb(dataset_path='hoda_dataset/Digits', target_size=(28, 28)):
     print(f"Train data shape: {x_train.shape}, Test data shape: {x_test.shape}")
     return (x_train, y_train), (x_test, y_test)
 
+# Build CNN model dynamically (10 classes for digits)
 def build_model(input_shape, use_pooling=True, conv_stride=(1, 1), padding_type='valid'):
     model = models.Sequential()
     
@@ -67,14 +69,14 @@ def build_model(input_shape, use_pooling=True, conv_stride=(1, 1), padding_type=
     model.add(layers.Flatten())
     model.add(layers.Dense(128, activation='relu'))
     model.add(layers.Dropout(0.3))
-    model.add(layers.Dense(10, activation='softmax'))
+    model.add(layers.Dense(10, activation='softmax')) # 10 classes (0-9)
     
     model.compile(optimizer='adam',
                   loss='sparse_categorical_crossentropy',
                   metrics=['accuracy'])
     return model
 
-# 4. اجرای تست‌ها
+# Main execution block
 train_data, test_data = load_hoda_cdb()
 
 if train_data and test_data:

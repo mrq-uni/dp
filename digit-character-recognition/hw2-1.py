@@ -3,7 +3,7 @@ from tensorflow.keras import layers, models
 import tensorflow_datasets as tfds
 import time
 
-
+# Load EMNIST balanced dataset (47 classes)
 def load_emnist():
     print("Loading EMNIST dataset...")
     (ds_train, ds_test), ds_info = tfds.load(
@@ -14,6 +14,7 @@ def load_emnist():
         with_info=True,
     )
 
+    # Normalize pixel values to [0, 1] and fix image rotation
     def normalize_img(image, label):
         image = tf.cast(image, tf.float32) / 255.0
         image = tf.transpose(image, [1, 0, 2])
@@ -25,11 +26,11 @@ def load_emnist():
 
     return ds_train, ds_test
 
-
+# Build CNN model dynamically based on configurations
 def build_model(use_pooling=True, conv_stride=(1, 1), padding_type='valid'):
     model = models.Sequential()
 
-    model.add(layers.InputLayer(input_shape=(28, 28, 1)))
+    model.add(layers.InputLayer(shape=(28, 28, 1)))
     model.add(layers.Conv2D(32, (3, 3), activation='relu', padding=padding_type))
 
     if use_pooling:
@@ -46,15 +47,15 @@ def build_model(use_pooling=True, conv_stride=(1, 1), padding_type='valid'):
 
     model.add(layers.Flatten())
     model.add(layers.Dense(128, activation='relu'))
-    model.add(layers.Dropout(0.3))
-    model.add(layers.Dense(47, activation='softmax'))
+    model.add(layers.Dropout(0.3)) # Prevent overfitting
+    model.add(layers.Dense(47, activation='softmax')) # 47 classes for EMNIST
 
     model.compile(optimizer='adam',
                   loss='sparse_categorical_crossentropy',
                   metrics=['accuracy'])
     return model
 
-
+# Main execution block
 ds_train, ds_test = load_emnist()
 
 configs = [

@@ -9,27 +9,25 @@ import ssl
 
 from HodaDatasetReader import read_hoda_cdb
 
+# Load and combine Hoda Digits and Letters datasets
 def load_combined_hoda(dataset_path='hoda_dataset', target_size=(28, 28)):
     print("\nLoading Digits and Letters datasets...")
     
-    # مسیرهای فایل‌های ارقام و حروف
+    # Paths for both digits and letters
     d_train_path = os.path.join(dataset_path, 'Digits', 'Train 60000.cdb')
     d_test_path = os.path.join(dataset_path, 'Digits', 'Test 20000.cdb')
     l_train_path = os.path.join(dataset_path, 'Letters', 'Persian-Character-DB-Training.cdb')
     l_test_path = os.path.join(dataset_path, 'Letters', 'Persian-Character-DB-Test.cdb')
     
-    # خواندن ارقام
     print("Reading Digits (.cdb files)...")
     d_train_img, d_train_lbl = read_hoda_cdb(d_train_path)
     d_test_img, d_test_lbl = read_hoda_cdb(d_test_path)
     
-    # خواندن حروف
     print("Reading Letters (.cdb files)...")
     l_train_img, l_train_lbl = read_hoda_cdb(l_train_path)
     l_test_img, l_test_lbl = read_hoda_cdb(l_test_path)
     
-    # --- اصلاح و شیفت دادن برچسب‌ها ---
-    # ارقام رو بین 0 تا 9 و حروف رو از 10 به بعد شماره‌گذاری می‌کنیم تا تداخل نداشته باشن
+    # Remap labels to avoid overlap between digits and letters
     d_unique = np.unique(np.concatenate((d_train_lbl, d_test_lbl)))
     d_map = {val: i for i, val in enumerate(d_unique)}
     
@@ -42,14 +40,14 @@ def load_combined_hoda(dataset_path='hoda_dataset', target_size=(28, 28)):
     l_train_lbl = np.array([l_map[lbl] for lbl in l_train_lbl])
     l_test_lbl = np.array([l_map[lbl] for lbl in l_test_lbl])
     
-    # --- ترکیب داده‌ها ---
+    # Combine datasets
     train_images_raw = d_train_img + l_train_img
     test_images_raw = d_test_img + l_test_img
     
     y_train = np.concatenate([d_train_lbl, l_train_lbl])
     y_test = np.concatenate([d_test_lbl, l_test_lbl])
     
-    # تابعی برای تغییر اندازه و پیش‌پردازش
+    # Resize and normalize images
     def process_images(raw_images):
         processed = [cv2.resize(img, target_size, interpolation=cv2.INTER_AREA) for img in raw_images]
         processed_array = np.array(processed, dtype='float32') / 255.0
@@ -59,7 +57,7 @@ def load_combined_hoda(dataset_path='hoda_dataset', target_size=(28, 28)):
     x_train = process_images(train_images_raw)
     x_test = process_images(test_images_raw)
     
-    # بُر زدن (Shuffle) داده‌های آموزشی تا حروف و ارقام با هم مخلوط شوند
+    # Shuffle the training data
     shuffle_idx = np.random.permutation(len(x_train))
     x_train = x_train[shuffle_idx]
     y_train = y_train[shuffle_idx]
@@ -67,7 +65,7 @@ def load_combined_hoda(dataset_path='hoda_dataset', target_size=(28, 28)):
     print(f"Combined Train data shape: {x_train.shape}, Test data shape: {x_test.shape}")
     return (x_train, y_train), (x_test, y_test)
 
-# 3. تابع ساخت مدل (تعداد کلاس‌ها به صورت خودکار تعیین می‌شود)
+# Build CNN model dynamically based on number of classes
 def build_model(input_shape, num_classes, use_pooling=True, conv_stride=(1, 1), padding_type='valid'):
     model = models.Sequential()
     
@@ -90,7 +88,7 @@ def build_model(input_shape, num_classes, use_pooling=True, conv_stride=(1, 1), 
     model.add(layers.Dense(128, activation='relu'))
     model.add(layers.Dropout(0.3))
     
-    # لایه خروجی برای ترکیب حروف و ارقام
+    # Dynamic output layer based on total unique classes
     model.add(layers.Dense(num_classes, activation='softmax')) 
     
     model.compile(optimizer='adam',
@@ -98,7 +96,7 @@ def build_model(input_shape, num_classes, use_pooling=True, conv_stride=(1, 1), 
                   metrics=['accuracy'])
     return model
 
-# 4. اجرای تست‌ها
+# Main execution block
 train_data, test_data = load_combined_hoda()
 
 if train_data and test_data:
@@ -106,6 +104,7 @@ if train_data and test_data:
     x_test, y_test = test_data
     input_shape = x_train.shape[1:]
     
+    # Calculate total number of classes
     num_classes = int(max(np.max(y_train), np.max(y_test))) + 1
     print(f"\nDetected {num_classes} unique classes (Digits + Letters).")
 
